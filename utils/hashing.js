@@ -16,8 +16,11 @@ export const hmacProcess = (value, key)=>{
     const result = crypto.createHmac('sha256', key).update(value).digest('hex');
     return result;
 }
+
 export default {
     doHash,
     doHashValidation,
     hmacProcess
 }
+
+

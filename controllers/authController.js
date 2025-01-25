@@ -1,10 +1,11 @@
-import { signupSchema, signinSchema } from "../middlewares/validator.js";
+import { signupSchema, signinSchema, acceptCodeSchema } from "../middlewares/validator.js";
 import User from "../models/usersModel.js";
 import { doHash, doHashValidation, hmacProcess } from "../utils/hashing.js";
 import jwt from "jsonwebtoken";
 import transporter from "../middlewares/sendMail.js";
 
 
+//Sign up
 export const signup = async (req, res) => {
   const { email, password } = req.body;
     try{
@@ -12,9 +13,9 @@ export const signup = async (req, res) => {
            
            if(error){
             return res.status(401).json({success:false, message: error.details[0].message}); 
-           }
+           }           
          const existingUser = await User.findOne({email});
-
+              
          if(existingUser){
             return res.status(401).json({success:false, message: "User already exists"});
          }
@@ -24,7 +25,9 @@ export const signup = async (req, res) => {
             email,
             password: hashedPassword,
          })
+
          const result = await newUser.save();
+         console.log(hashedPassword, password)
          result.password = undefined;
          res.status(201).json({success:true, data: result, message: "User created successfully"}); 
          
@@ -35,7 +38,7 @@ export const signup = async (req, res) => {
 
  };
 
-
+//Sign in
  export const signin = async (req, res) => {
     const {email, password} = req.body;
     try {
@@ -66,7 +69,8 @@ export const signup = async (req, res) => {
       },process.env.TOKEN_SECRET, {
         expiresIn: "8h"
       });
-
+      
+      
        res.cookie(
          'Authorization', 'Bearer' 
          + token ,{expires : new Date(Date.now() + 8 * 3600000),
@@ -81,15 +85,17 @@ export const signup = async (req, res) => {
    }
  }
 
+ //Sign out
 export const signout = async (req, res) => {
   res.clearCookie('Authorization');
   res.json({success:true, message: "User logged out successfully"});
+
 
 }; 
 
 
   
-
+//Send verification email
  export const sendVerificationEmail = async (req, res) => {
  const {email} = req.body;
  try{
@@ -107,20 +113,23 @@ export const signout = async (req, res) => {
     .json({success:false, message: "User already verified"});
   }
   const codeValue = Math.floor(Math.random() * 1000000).toString();
+
  let info = await transporter.sendMail({
     from:process.env.NODE_CODE_SENDING_EMAIL_ADDRESS,
     to : existingUser.email,
     subject: "Email Verification",
     html: `<h1> Your verification code is ${codeValue}</h1>`
+    
  })
 
  if(info.accepted[0] === existingUser.email){
  const hashedCode = await hmacProcess(codeValue, process.env.HMACHASH_SECRET);
  existingUser.verificationCode = hashedCode;
  existingUser.verificationCodeValidation = Date.now();
-await existingUser.save();
-
-  return res.status(200).json({
+ await existingUser.save();
+ console.log(existingUser.id);
+ console.log("Hashed Coode: " + hashedCode);
+ return res.status(200).json({
     success:true, 
     message: "Verification code sent successfully"
   });
@@ -132,9 +141,115 @@ await existingUser.save();
  }
 };
 
+
+//Verify code
+export const verifyCode = async (req, res) => {
+  const { email, providedCode } = req.body;
+ try{
+  const {error, value} = acceptCodeSchema.validate({email, providedCode});
+      
+
+  if(error){
+    return res.status(401).
+    json({success:false, message: error.details[0].message});
+
+  }
+  const codeValue = providedCode.toString();
+  const existingUser = await User.findOne({email})
+  .select("+verificationCode +verificationCodeValidation");
+
+  if(!existingUser){
+    return res
+    .status(404)
+    .json({success:false, message: "User does not exist"});
+  }
+  if(existingUser.verified){
+    return res
+    .status(400)
+    .json({success:false, message: "User already verified"});
+  }
+
+  if(!existingUser.verificationCode || !existingUser.verificationCodeValidation){
+    return res
+    .status(400)
+    .json({success:false, message: "No verification code found"});
+  }
+
+  if(Date.now() - existingUser.verificationCodeValidation > 5* 60 *1000){
+  return res.status(400).json({success:false, message:'Code has been expired!'})
+  }
+
+
+
+  const hashedCode = hmacProcess(codeValue,process.env.HMACHASH_SECRET);
+
+  if(hashedCode === existingUser.verificationCode){
+    existingUser.verified = true;
+    existingUser.verificationCode = undefined;
+    existingUser.verificationCodeValidation = undefined;
+    await existingUser.save();
+    return res.status(200).json({success:true, message:'Your account has been verified'});
+
+  }
+  return res.status(400).res({success:false, message:'Unexpected error occured!'})
+
+ }catch(error){
+     console.log(error);
+     res.status(500).json({
+      success:false,
+      message: "Server has an Error",})
+ }
+}
+
+
+export const getSignedInUser = async (req, res) => {
+  try {
+    const users = await User.find({});
+    res.status(200).json({ success: true, data: users });
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    res.status(500).json({ success: false, message: "Server has an Error", error: error.message });
+  }
+};
+export const getUser = async (req, res) => {
+  try {
+    const { id, email } = req.params;
+    const user = await User.findById(id);
+    console.log(user.email + " Triggered");
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    } else {
+      res.status(200).json({ success: true, data: user });
+    }
+  }catch (error) {
+    console.error("Error fetching user:", error);
+    res.status(500).json({ success: false, message: "Server has an Error", error: error.message });
+  }
+}
+
+export const deleteUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await User.findByIdAndDelete(id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+    res.status(200).json({ success: true, message: "User deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting user:", error);
+    res.status(500).json({ success: false, message: "Server has an Error", error: error.message });
+  }
+};   
+
+
 export default {
   signup,
  signin,
  signout,
-  sendVerificationEmail
+  sendVerificationEmail,
+  verifyCode,
+  getSignedInUser,
+  getUser,
+  deleteUser
 };
+
