@@ -3,7 +3,7 @@ import User from "../models/usersModel.js";
 import { doHash, doHashValidation, hmacProcess } from "../utils/hashing.js";
 import jwt from "jsonwebtoken";
 import transporter from "../middlewares/sendMail.js";
-
+import Admin from "../models/adminModel.js";
 
 //Sign up
 export const signup = async (req, res) => {
@@ -122,6 +122,7 @@ export const signout = async (req, res) => {
     
  })
 
+ 
  if(info.accepted[0] === existingUser.email){
  const hashedCode = await hmacProcess(codeValue, process.env.HMACHASH_SECRET);
  existingUser.verificationCode = hashedCode;
@@ -211,6 +212,7 @@ export const getSignedInUser = async (req, res) => {
     res.status(500).json({ success: false, message: "Server has an Error", error: error.message });
   }
 };
+
 export const getUser = async (req, res) => {
   try {
     const { id, email } = req.params;
@@ -227,6 +229,8 @@ export const getUser = async (req, res) => {
   }
 }
 
+
+//delete user
 export const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
@@ -241,8 +245,78 @@ export const deleteUser = async (req, res) => {
   }
 };   
 
+//---adminController.js---
+
+export const adminSignup = async (req, res) => {
+  const { email, password } = req.body;
+  try {
+    const { error, value } = signupSchema.validate({ email, password });
+
+    if (error) {
+      return res.status(401).json({ success: false, message: error.details[0].message });
+    }
+
+    const existingAdmin = await Admin.findOne({ email });
+
+    if (existingAdmin) {
+      return res.status(401).json({ success: false, message: "Admin already exists" });
+    }
+
+    const hashedPassword = await doHash(password, 12);
+
+    const newAdmin = new Admin({
+      email,
+      password: hashedPassword,
+    });
+
+    const result = await newAdmin.save();
+    result.password = undefined;
+    res.status(201).json({ success: true, data: result, message: "Admin created successfully" });
+
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+
+export const adminLogin = async (req, res) => {
+  const { email, password } = req.body;
+  try {
+    const admin = await Admin.findOne({ email }).select("+password");
+
+    if (!admin) {
+      return res.status(401).json({ success: false, message: "Invalid email or password" });
+    }
+
+    const result = await doHashValidation(password, admin.password);
+        if(!result){
+          return res.status(401).json({success:false, message: "Invalid password"});
+        };
+
+      const token = jwt.sign({ email: admin.email, id: admin._id }, process.env.TOKEN_SECRET, {
+      expiresIn: "8h"
+      });
+
+      res.cookie(
+        'Authorization', 'Bearer' 
+        + token ,{expires : new Date(Date.now() + 8 * 3600000),
+         httpOnly: process.env.NODE_ENV === 'production',
+         secure: process.env.NODE_ENV === 'production'
+     }).json({success:true, data: admin, token: token, message: "User logged in successfully"});
+
+
+  }catch(error){
+     return res.status(500).json({success:false, message: error.message});
+  }
+}
+
+export const adminSignout = async (req, res) => {
+  res.clearCookie('Authorization');
+  res.json({success:true, message: "Admin logged out successfully"});
+}
 
 export default {
+  //user
   signup,
  signin,
  signout,
@@ -250,6 +324,11 @@ export default {
   verifyCode,
   getSignedInUser,
   getUser,
-  deleteUser
+  deleteUser,
+  //admin
+  adminLogin,
+  adminSignup,
+  adminSignout
+
 };
 
