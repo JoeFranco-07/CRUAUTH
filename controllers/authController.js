@@ -1,9 +1,13 @@
 import { signupSchema, signinSchema, acceptCodeSchema } from "../middlewares/validator.js";
-import User from "../models/usersModel.js";
 import { doHash, doHashValidation, hmacProcess } from "../utils/hashing.js";
 import jwt from "jsonwebtoken";
 import transporter from "../middlewares/sendMail.js";
+
+
+//Model
 import Admin from "../models/adminModel.js";
+import User from "../models/usersModel.js";
+import Post from '../models/postModel.js';
 
 //Sign up
 export const signup = async (req, res) => {
@@ -314,6 +318,8 @@ export const adminSignout = async (req, res) => {
   res.clearCookie('Authorization');
   res.json({success:true, message: "Admin logged out successfully"});
 }
+
+
 
 export default {
   //user

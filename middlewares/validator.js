@@ -1,5 +1,6 @@
 import Joi from 'joi';
 
+
 export const signupSchema = Joi.object({
     email: Joi.string().min(0).max(60).required().email({
         tlds: {allow: ['com','net']}
@@ -30,5 +31,5 @@ export default {
     signupSchema,
     signinSchema,
  };
-
+ 
 
